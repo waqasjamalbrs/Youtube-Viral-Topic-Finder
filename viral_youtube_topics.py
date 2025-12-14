@@ -28,13 +28,36 @@ max_subs_limit = st.sidebar.number_input(
     help="Only show videos from channels with fewer subscribers than this."
 )
 
-# 3. Video Type Filter (Shorts vs Long)
-video_type = st.sidebar.radio(
-    "Video Type:",
-    ("All", "Long Form (> 1 min)", "Shorts (< 1 min)")
+# 3. Minimum Views Input (NEW)
+min_views_limit = st.sidebar.number_input(
+    "Minimum Views (Filter):",
+    min_value=0,
+    value=2000,
+    step=1000,
+    help="Only show videos that have at least this many views."
 )
 
-# 4. Keywords Input
+st.sidebar.markdown("---")
+st.sidebar.subheader("Video Duration Settings")
+
+# 4. Custom Shorts Threshold
+shorts_threshold = st.sidebar.number_input(
+    "Define Shorts Length (seconds):",
+    min_value=10,
+    max_value=300,
+    value=60,
+    step=5,
+    help="Videos shorter than or equal to this will be considered 'Shorts'."
+)
+
+# 5. Video Type Filter
+video_type = st.sidebar.radio(
+    "Filter by Type:",
+    ("All", "Long Form", "Shorts")
+)
+
+# 6. Keywords Input
+st.sidebar.markdown("---")
 st.subheader("Enter Keywords")
 st.markdown("Enter your topics below. Separate by Comma (`,`) or New Line.")
 keyword_input = st.text_area(
@@ -109,7 +132,7 @@ if st.button("Find Viral Videos"):
                     "type": "video",
                     "order": "viewCount",
                     "publishedAfter": start_date,
-                    "maxResults": 20, # Fetch more to allow for filtering
+                    "maxResults": 30, # Fetch more to allow for aggressive filtering
                     "key": API_KEY,
                 }
 
@@ -182,13 +205,17 @@ if st.button("Find Viral Videos"):
                     # 1. Subscriber Filter
                     if subs >= max_subs_limit or subs == 0:
                         continue
-                        
-                    # 2. Video Type Filter (Shorts vs Long)
-                    is_short = duration_seconds <= 60
                     
-                    if video_type == "Shorts (< 1 min)" and not is_short:
+                    # 2. Minimum Views Filter (NEW)
+                    if views < min_views_limit:
                         continue
-                    if video_type == "Long Form (> 1 min)" and is_short:
+
+                    # 3. Video Type Filter (Dynamic Duration)
+                    is_short = duration_seconds <= shorts_threshold
+                    
+                    if video_type == "Shorts" and not is_short:
+                        continue
+                    if video_type == "Long Form" and is_short:
                         continue
                     
                     # If passed all filters, add to results
@@ -222,7 +249,7 @@ if st.button("Find Viral Videos"):
                             st.divider()
 
             if not results_found:
-                st.warning("No videos found matching your criteria. Try changing the duration, filters, or keywords.")
+                st.warning("No videos found. Try lowering the 'Minimum Views' or increasing the 'Look back days'.")
             else:
                 st.success(f"Search Complete! Total videos found: {total_videos_found}")
 
