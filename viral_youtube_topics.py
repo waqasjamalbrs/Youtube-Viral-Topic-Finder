@@ -89,9 +89,9 @@ def format_seconds_to_time(seconds):
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
     if h > 0:
-        return f"{h}:{m:02d}:{s:02d}" # Example: 1:05:30
+        return f"{h}:{m:02d}:{s:02d}" 
     else:
-        return f"{m}:{s:02d}" # Example: 05:30
+        return f"{m}:{s:02d}"
 
 def calculate_time_ago(iso_date_str):
     """Calculates relative time."""
@@ -194,9 +194,7 @@ if st.button("Find Viral Videos"):
                     views = int(vid_stats.get('viewCount', 0))
                     duration_sec = parse_duration(vid_content.get('duration', "PT0S"))
                     
-                    # NEW: Format duration nicely
                     formatted_duration = format_seconds_to_time(duration_sec)
-                    
                     video_age = calculate_time_ago(vid_snippet.get('publishedAt'))
 
                     # Channel Data
@@ -204,6 +202,9 @@ if st.button("Find Viral Videos"):
                     subs = int(ch_data.get('statistics', {}).get('subscriberCount', 0))
                     channel_publish_date = ch_data.get('snippet', {}).get('publishedAt')
                     channel_age = calculate_time_ago(channel_publish_date)
+                    
+                    # Create Channel URL
+                    channel_url = f"https://www.youtube.com/channel/{ch_id}"
                     
                     # FILTERS
                     if subs >= max_subs_limit or subs == 0: continue
@@ -219,9 +220,10 @@ if st.button("Find Viral Videos"):
                         "url": f"https://www.youtube.com/watch?v={vid_id}",
                         "thumb": video["snippet"]["thumbnails"]["medium"]["url"],
                         "channel": video["snippet"]["channelTitle"],
+                        "channel_url": channel_url, # Store URL
                         "views": views,
                         "subs": subs,
-                        "duration_str": formatted_duration, # Use formatted string
+                        "duration_str": formatted_duration,
                         "video_age": video_age,
                         "channel_age": channel_age
                     })
@@ -238,11 +240,14 @@ if st.button("Find Viral Videos"):
                                 st.image(res["thumb"], use_container_width=True)
                             with col2:
                                 st.markdown(f"### [{res['title']}]({res['url']})")
-                                st.markdown(f"📺 **Channel:** {res['channel']}")
+                                
+                                # Updated Channel Line with Clickable Link
+                                st.markdown(f"📺 **Channel:** [{res['channel']}]({res['channel_url']})") 
+                                
                                 st.markdown(
                                     f"👁️ **Views:** `{res['views']:,}` | "
                                     f"👥 **Subs:** `{res['subs']:,}` | "
-                                    f"⏳ **Duration:** `{res['duration_str']}`" # Now shows mins:secs
+                                    f"⏳ **Duration:** `{res['duration_str']}`"
                                 )
                                 st.markdown(
                                     f"📅 **Video Age:** {res['video_age']} | "
