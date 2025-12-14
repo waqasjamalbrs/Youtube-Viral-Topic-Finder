@@ -16,10 +16,10 @@ st.markdown("Find trending videos on small channels based on specific keywords."
 # --- SIDEBAR INPUTS ---
 st.sidebar.header("Search Settings")
 
-# 1. Days Input (Duration)
+# 1. Days Input
 days = st.sidebar.number_input("Look back (days):", min_value=1, max_value=365, value=7)
 
-# 2. Subscriber Limit Input
+# 2. Subscriber Limit
 max_subs_limit = st.sidebar.number_input(
     "Max Subscriber Count (Filter):", 
     min_value=0, 
@@ -28,7 +28,7 @@ max_subs_limit = st.sidebar.number_input(
     help="Only show videos from channels with fewer subscribers than this."
 )
 
-# 3. Minimum Views Input
+# 3. Minimum Views
 min_views_limit = st.sidebar.number_input(
     "Minimum Views (Filter):",
     min_value=0,
@@ -84,13 +84,27 @@ def parse_duration(duration_str):
     seconds = int(match.group(3)[:-1]) if match.group(3) else 0
     return (hours * 3600) + (minutes * 60) + seconds
 
+def format_seconds_to_time(seconds):
+    """Converts seconds to H:MM:SS or MM:SS format"""
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}" # Example: 1:05:30
+    else:
+        return f"{m}:{s:02d}" # Example: 05:30
+
 def calculate_time_ago(iso_date_str):
-    """Calculates relative time (e.g., 2 days ago)."""
+    """Calculates relative time."""
     if not iso_date_str: return "Unknown"
+    
+    published_date = None
     try:
         published_date = datetime.strptime(iso_date_str, "%Y-%m-%dT%H:%M:%SZ")
     except ValueError:
-        return "Unknown"
+        try:
+            published_date = datetime.strptime(iso_date_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError:
+            return "Unknown"
 
     now = datetime.utcnow()
     diff = now - published_date
@@ -132,7 +146,7 @@ if st.button("Find Viral Videos"):
             for idx, keyword in enumerate(keywords):
                 progress_bar.progress((idx + 1) / len(keywords))
                 
-                # 1. Search for videos
+                # 1. Search
                 search_params = {
                     "part": "snippet",
                     "q": keyword,
@@ -153,13 +167,13 @@ if st.button("Find Viral Videos"):
 
                 if not video_ids: continue
 
-                # 2. Get Video Details (Stats + Duration + Snippet for Publish Date)
+                # 2. Video Stats
                 stats_params = {"part": "statistics,contentDetails,snippet", "id": ",".join(video_ids), "key": API_KEY}
                 stats_response = requests.get(YOUTUBE_VIDEO_URL, params=stats_params)
                 stats_data = stats_response.json()
                 video_details_map = {item['id']: item for item in stats_data.get('items', [])}
 
-                # 3. Get Channel Details (Stats + Snippet for Creation Date)
+                # 3. Channel Stats
                 channel_params = {"part": "statistics,snippet", "id": ",".join(channel_ids), "key": API_KEY}
                 channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
                 channel_data = channel_response.json()
@@ -171,7 +185,7 @@ if st.button("Find Viral Videos"):
                     vid_id = video['id']['videoId']
                     ch_id = video['snippet']['channelId']
                     
-                    # Video Data extraction
+                    # Video Data
                     vid_details = video_details_map.get(vid_id, {})
                     vid_stats = vid_details.get('statistics', {})
                     vid_content = vid_details.get('contentDetails', {})
@@ -179,12 +193,17 @@ if st.button("Find Viral Videos"):
                     
                     views = int(vid_stats.get('viewCount', 0))
                     duration_sec = parse_duration(vid_content.get('duration', "PT0S"))
+                    
+                    # NEW: Format duration nicely
+                    formatted_duration = format_seconds_to_time(duration_sec)
+                    
                     video_age = calculate_time_ago(vid_snippet.get('publishedAt'))
 
-                    # Channel Data extraction
+                    # Channel Data
                     ch_data = channel_map.get(ch_id, {})
                     subs = int(ch_data.get('statistics', {}).get('subscriberCount', 0))
-                    channel_age = calculate_time_ago(ch_data.get('snippet', {}).get('publishedAt'))
+                    channel_publish_date = ch_data.get('snippet', {}).get('publishedAt')
+                    channel_age = calculate_time_ago(channel_publish_date)
                     
                     # FILTERS
                     if subs >= max_subs_limit or subs == 0: continue
@@ -202,7 +221,7 @@ if st.button("Find Viral Videos"):
                         "channel": video["snippet"]["channelTitle"],
                         "views": views,
                         "subs": subs,
-                        "duration_sec": duration_sec,
+                        "duration_str": formatted_duration, # Use formatted string
                         "video_age": video_age,
                         "channel_age": channel_age
                     })
@@ -218,24 +237,17 @@ if st.button("Find Viral Videos"):
                             with col1:
                                 st.image(res["thumb"], use_container_width=True)
                             with col2:
-                                # Title
                                 st.markdown(f"### [{res['title']}]({res['url']})")
-                                # Channel Name
                                 st.markdown(f"📺 **Channel:** {res['channel']}")
-                                
-                                # --- THE EXACT LINE FROM YOUR SCREENSHOT ---
                                 st.markdown(
                                     f"👁️ **Views:** `{res['views']:,}` | "
                                     f"👥 **Subs:** `{res['subs']:,}` | "
-                                    f"⏳ **Duration:** `{res['duration_sec']} sec`"
+                                    f"⏳ **Duration:** `{res['duration_str']}`" # Now shows mins:secs
                                 )
-                                
-                                # --- AGE INFO (As requested previously) ---
                                 st.markdown(
                                     f"📅 **Video Age:** {res['video_age']} | "
                                     f"🎂 **Channel Age:** {res['channel_age']}"
                                 )
-                                
                                 st.caption(res['desc'])
                             st.divider()
 
