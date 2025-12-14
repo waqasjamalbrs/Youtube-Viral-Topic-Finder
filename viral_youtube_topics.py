@@ -75,6 +75,7 @@ def get_keywords_list(raw_input):
     return [item.strip() for item in items if item.strip()]
 
 def parse_duration(duration_str):
+    """Parses YouTube duration (PT1M30S) into seconds."""
     if not duration_str: return 0
     match = re.match(r'PT(\d+H)?(\d+M)?(\d+S)?', duration_str)
     if not match: return 0
@@ -84,39 +85,26 @@ def parse_duration(duration_str):
     return (hours * 3600) + (minutes * 60) + seconds
 
 def calculate_time_ago(iso_date_str):
-    """
-    Calculates how much time has passed since the ISO date string.
-    Returns strings like '2 days ago', '3 years ago'.
-    """
-    if not iso_date_str:
-        return "Unknown"
-    
-    # Parse ISO format (Handles 'Z' correctly)
+    """Calculates relative time (e.g., 2 days ago)."""
+    if not iso_date_str: return "Unknown"
     try:
         published_date = datetime.strptime(iso_date_str, "%Y-%m-%dT%H:%M:%SZ")
     except ValueError:
-        # Fallback if format is slightly different
         return "Unknown"
 
     now = datetime.utcnow()
     diff = now - published_date
-
     days = diff.days
-    seconds = diff.seconds
 
     if days >= 365:
-        years = days // 365
-        return f"{years} year{'s' if years > 1 else ''} ago"
+        return f"{days // 365} year(s) ago"
     elif days >= 30:
-        months = days // 30
-        return f"{months} month{'s' if months > 1 else ''} ago"
+        return f"{days // 30} month(s) ago"
     elif days > 0:
-        return f"{days} day{'s' if days > 1 else ''} ago"
-    elif seconds >= 3600:
-        hours = seconds // 3600
-        return f"{hours} hour{'s' if hours > 1 else ''} ago"
+        return f"{days} day(s) ago"
     else:
-        return "Just now"
+        hours = diff.seconds // 3600
+        return f"{hours} hour(s) ago" if hours > 0 else "Just now"
 
 # --- MAIN LOGIC ---
 
@@ -132,7 +120,6 @@ if st.button("Find Viral Videos"):
             YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
             YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
             
-            # Calculate date range
             start_date = (datetime.utcnow() - timedelta(days=int(days))).isoformat("T") + "Z"
             
             results_found = False
@@ -140,15 +127,12 @@ if st.button("Find Viral Videos"):
 
             st.write("---")
             st.info(f"Searching across {len(keywords)} keywords for the last {days} days...")
-
-            # Progress bar
             progress_bar = st.progress(0)
 
             for idx, keyword in enumerate(keywords):
-                # Update progress
                 progress_bar.progress((idx + 1) / len(keywords))
                 
-                # Define search parameters
+                # 1. Search for videos
                 search_params = {
                     "part": "snippet",
                     "q": keyword,
@@ -158,43 +142,27 @@ if st.button("Find Viral Videos"):
                     "maxResults": 30, 
                     "key": API_KEY,
                 }
-
-                # Fetch video data
                 response = requests.get(YOUTUBE_SEARCH_URL, params=search_params)
-                if response.status_code != 200:
-                    st.error(f"API Error for '{keyword}': {response.json().get('error', {}).get('message', 'Unknown Error')}")
-                    continue
-
                 data = response.json()
 
-                if "items" not in data or not data["items"]:
-                    continue
+                if "items" not in data or not data["items"]: continue
 
                 videos = data["items"]
-                video_ids = []
-                channel_ids = []
+                video_ids = [v["id"]["videoId"] for v in videos if "videoId" in v["id"]]
+                channel_ids = [v["snippet"]["channelId"] for v in videos if "channelId" in v["snippet"]]
 
-                for video in videos:
-                    if "videoId" in video["id"]:
-                        video_ids.append(video["id"]["videoId"])
-                        channel_ids.append(video["snippet"]["channelId"])
+                if not video_ids: continue
 
-                if not video_ids:
-                    continue
-
-                # Fetch video stats
+                # 2. Get Video Details (Stats + Duration + Snippet for Publish Date)
                 stats_params = {"part": "statistics,contentDetails,snippet", "id": ",".join(video_ids), "key": API_KEY}
                 stats_response = requests.get(YOUTUBE_VIDEO_URL, params=stats_params)
                 stats_data = stats_response.json()
+                video_details_map = {item['id']: item for item in stats_data.get('items', [])}
 
-                # Fetch channel stats (Added 'snippet' to get creation date)
+                # 3. Get Channel Details (Stats + Snippet for Creation Date)
                 channel_params = {"part": "statistics,snippet", "id": ",".join(channel_ids), "key": API_KEY}
                 channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
                 channel_data = channel_response.json()
-
-                # Map data
-                video_details_map = {item['id']: item for item in stats_data.get('items', [])}
-                # Map channel stats AND snippet (for creation date)
                 channel_map = {item['id']: item for item in channel_data.get('items', [])}
 
                 keyword_results = []
@@ -203,52 +171,42 @@ if st.button("Find Viral Videos"):
                     vid_id = video['id']['videoId']
                     ch_id = video['snippet']['channelId']
                     
-                    # Video Data
+                    # Video Data extraction
                     vid_details = video_details_map.get(vid_id, {})
                     vid_stats = vid_details.get('statistics', {})
                     vid_content = vid_details.get('contentDetails', {})
-                    vid_snippet = vid_details.get('snippet', {}) # Need precise publish date
+                    vid_snippet = vid_details.get('snippet', {}) 
                     
                     views = int(vid_stats.get('viewCount', 0))
-                    duration_iso = vid_content.get('duration', "PT0S")
-                    duration_seconds = parse_duration(duration_iso)
-                    video_publish_date = vid_snippet.get('publishedAt')
-                    video_age_str = calculate_time_ago(video_publish_date)
+                    duration_sec = parse_duration(vid_content.get('duration', "PT0S"))
+                    video_age = calculate_time_ago(vid_snippet.get('publishedAt'))
 
-                    # Channel Data
-                    ch_data_item = channel_map.get(ch_id, {})
-                    ch_stats = ch_data_item.get('statistics', {})
-                    ch_snippet = ch_data_item.get('snippet', {})
+                    # Channel Data extraction
+                    ch_data = channel_map.get(ch_id, {})
+                    subs = int(ch_data.get('statistics', {}).get('subscriberCount', 0))
+                    channel_age = calculate_time_ago(ch_data.get('snippet', {}).get('publishedAt'))
                     
-                    subs_raw = ch_stats.get('subscriberCount', 0)
-                    subs = int(subs_raw) if subs_raw else 0 
-                    
-                    channel_publish_date = ch_snippet.get('publishedAt')
-                    channel_age_str = calculate_time_ago(channel_publish_date)
-                    
-                    # --- FILTERS ---
+                    # FILTERS
                     if subs >= max_subs_limit or subs == 0: continue
                     if views < min_views_limit: continue
-
-                    is_short = duration_seconds <= shorts_threshold
+                    
+                    is_short = duration_sec <= shorts_threshold
                     if video_type == "Shorts" and not is_short: continue
                     if video_type == "Long Form" and is_short: continue
                     
-                    # Add to results
                     keyword_results.append({
                         "title": video["snippet"]["title"],
                         "desc": video["snippet"].get("description", "")[:150] + "...",
                         "url": f"https://www.youtube.com/watch?v={vid_id}",
-                        "views": views,
-                        "subs": subs,
-                        "duration": f"{duration_seconds} sec",
                         "thumb": video["snippet"]["thumbnails"]["medium"]["url"],
                         "channel": video["snippet"]["channelTitle"],
-                        "video_age": video_age_str,
-                        "channel_age": channel_age_str
+                        "views": views,
+                        "subs": subs,
+                        "duration_sec": duration_sec,
+                        "video_age": video_age,
+                        "channel_age": channel_age
                     })
 
-                # Display Results
                 if keyword_results:
                     results_found = True
                     st.subheader(f"Results for: '{keyword}'")
@@ -260,21 +218,31 @@ if st.button("Find Viral Videos"):
                             with col1:
                                 st.image(res["thumb"], use_container_width=True)
                             with col2:
+                                # Title
                                 st.markdown(f"### [{res['title']}]({res['url']})")
+                                # Channel Name
+                                st.markdown(f"📺 **Channel:** {res['channel']}")
                                 
-                                # Row 1: Channel Info & Age
-                                st.markdown(f"📺 **Channel:** {res['channel']} (Subs: `{res['subs']:,}`) | 🎂 **Channel Age:** `{res['channel_age']}`")
+                                # --- THE EXACT LINE FROM YOUR SCREENSHOT ---
+                                st.markdown(
+                                    f"👁️ **Views:** `{res['views']:,}` | "
+                                    f"👥 **Subs:** `{res['subs']:,}` | "
+                                    f"⏳ **Duration:** `{res['duration_sec']} sec`"
+                                )
                                 
-                                # Row 2: Video Stats & Age
-                                st.markdown(f"👁️ **Views:** `{res['views']:,}` | ⏳ **Duration:** `{res['duration']}` | 📅 **Uploaded:** `{res['video_age']}`")
+                                # --- AGE INFO (As requested previously) ---
+                                st.markdown(
+                                    f"📅 **Video Age:** {res['video_age']} | "
+                                    f"🎂 **Channel Age:** {res['channel_age']}"
+                                )
                                 
                                 st.caption(res['desc'])
                             st.divider()
 
             if not results_found:
-                st.warning("No videos found matching your criteria.")
+                st.warning("No videos found. Try adjusting filters.")
             else:
-                st.success(f"Search Complete! Total videos found: {total_videos_found}")
+                st.success(f"Done! Found {total_videos_found} videos.")
 
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            st.error(f"Error: {e}")
