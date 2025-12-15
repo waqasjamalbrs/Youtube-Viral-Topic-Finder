@@ -6,8 +6,13 @@ from datetime import datetime, timedelta
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Viral Topic Finder", layout="wide")
 
-# !!! API KEY HARDCODED !!!
-API_KEY = "AIzaSyDjTun06qZ6n4Ud84zZes71IgoJWYlD19o"
+# --- SECURE API KEY HANDLING ---
+# Ye ab automatically Streamlit Cloud ki Settings se key uthayega
+if "YOUTUBE_API_KEY" in st.secrets:
+    API_KEY = st.secrets["YOUTUBE_API_KEY"]
+else:
+    st.error("API Key missing! Please add YOUTUBE_API_KEY in Streamlit Secrets.")
+    st.stop()
 
 # Streamlit App Title
 st.title("YouTube Viral Topics Finder 🚀")
@@ -220,7 +225,7 @@ if st.button("Find Viral Videos"):
                         "url": f"https://www.youtube.com/watch?v={vid_id}",
                         "thumb": video["snippet"]["thumbnails"]["medium"]["url"],
                         "channel": video["snippet"]["channelTitle"],
-                        "channel_url": channel_url, # Store URL
+                        "channel_url": channel_url,
                         "views": views,
                         "subs": subs,
                         "duration_str": formatted_duration,
@@ -241,7 +246,7 @@ if st.button("Find Viral Videos"):
                             with col2:
                                 st.markdown(f"### [{res['title']}]({res['url']})")
                                 
-                                # Updated Channel Line with Clickable Link
+                                # Clickable Channel Name
                                 st.markdown(f"📺 **Channel:** [{res['channel']}]({res['channel_url']})") 
                                 
                                 st.markdown(
