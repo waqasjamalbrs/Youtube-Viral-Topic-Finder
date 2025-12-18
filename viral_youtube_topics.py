@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Viral Topic Finder", layout="wide")
 
 # --- SECURE API KEY HANDLING ---
-# Ye ab automatically Streamlit Cloud ki Settings se key uthayega
+# Ab key code mein nazar nahi aayegi. Sirf Streamlit Secrets se aayegi.
 if "YOUTUBE_API_KEY" in st.secrets:
     API_KEY = st.secrets["YOUTUBE_API_KEY"]
 else:
@@ -45,20 +45,21 @@ min_views_limit = st.sidebar.number_input(
 st.sidebar.markdown("---")
 st.sidebar.subheader("Video Duration Settings")
 
-# 4. Custom Shorts Threshold
+# 4. Custom Shorts Threshold (Default: 120 seconds)
 shorts_threshold = st.sidebar.number_input(
     "Define Shorts Length (seconds):",
     min_value=10,
     max_value=300,
-    value=60,
-    step=5,
+    value=120, 
+    step=10,
     help="Videos shorter than or equal to this will be considered 'Shorts'."
 )
 
-# 5. Video Type Filter
+# 5. Video Type Filter (Default: Long Form)
 video_type = st.sidebar.radio(
     "Filter by Type:",
-    ("All", "Long Form", "Shorts")
+    ("All", "Long Form", "Shorts"),
+    index=1  # Sets 'Long Form' as default
 )
 
 # 6. Keywords Input
@@ -183,7 +184,7 @@ if st.button("Find Viral Videos"):
                 channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
                 channel_data = channel_response.json()
                 channel_map = {item['id']: item for item in channel_data.get('items', [])}
-
+                
                 keyword_results = []
                 
                 for video in videos:
@@ -205,6 +206,7 @@ if st.button("Find Viral Videos"):
                     # Channel Data
                     ch_data = channel_map.get(ch_id, {})
                     subs = int(ch_data.get('statistics', {}).get('subscriberCount', 0))
+                    total_videos = int(ch_data.get('statistics', {}).get('videoCount', 0))
                     channel_publish_date = ch_data.get('snippet', {}).get('publishedAt')
                     channel_age = calculate_time_ago(channel_publish_date)
                     
@@ -228,9 +230,10 @@ if st.button("Find Viral Videos"):
                         "channel_url": channel_url,
                         "views": views,
                         "subs": subs,
+                        "total_videos": total_videos,
                         "duration_str": formatted_duration,
                         "video_age": video_age,
-                        "channel_age": channel_age
+                        "channel_age": channel_age # Channel Creation Date (approx first video)
                     })
 
                 if keyword_results:
@@ -246,17 +249,17 @@ if st.button("Find Viral Videos"):
                             with col2:
                                 st.markdown(f"### [{res['title']}]({res['url']})")
                                 
-                                # Clickable Channel Name
-                                st.markdown(f"📺 **Channel:** [{res['channel']}]({res['channel_url']})") 
+                                st.markdown(f"📺 **Channel:** [{res['channel']}]({res['channel_url']}) | 🎥 **Total Videos:** `{res['total_videos']:,}`") 
                                 
                                 st.markdown(
                                     f"👁️ **Views:** `{res['views']:,}` | "
                                     f"👥 **Subs:** `{res['subs']:,}` | "
                                     f"⏳ **Duration:** `{res['duration_str']}`"
                                 )
+                                
                                 st.markdown(
                                     f"📅 **Video Age:** {res['video_age']} | "
-                                    f"🎂 **Channel Age:** {res['channel_age']}"
+                                    f"🎂 **Channel Started:** {res['channel_age']}"
                                 )
                                 st.caption(res['desc'])
                             st.divider()
