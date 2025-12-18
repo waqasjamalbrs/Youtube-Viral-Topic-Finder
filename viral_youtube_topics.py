@@ -7,12 +7,11 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Viral Topic Finder", layout="wide")
 
 # --- SECURE API KEY HANDLING ---
-# Ab key code mein nazar nahi aayegi. Sirf Streamlit Secrets se aayegi.
 if "YOUTUBE_API_KEY" in st.secrets:
     API_KEY = st.secrets["YOUTUBE_API_KEY"]
 else:
-    st.error("API Key missing! Please add YOUTUBE_API_KEY in Streamlit Secrets.")
-    st.stop()
+    # Fallback for local testing
+    API_KEY = "AIzaSyDjTun06qZ6n4Ud84zZes71IgoJWYlD19o" 
 
 # Streamlit App Title
 st.title("YouTube Viral Topics Finder 🚀")
@@ -21,10 +20,8 @@ st.markdown("Find trending videos on small channels based on specific keywords."
 # --- SIDEBAR INPUTS ---
 st.sidebar.header("Search Settings")
 
-# 1. Days Input
 days = st.sidebar.number_input("Look back (days):", min_value=1, max_value=365, value=7)
 
-# 2. Subscriber Limit
 max_subs_limit = st.sidebar.number_input(
     "Max Subscriber Count (Filter):", 
     min_value=0, 
@@ -33,7 +30,6 @@ max_subs_limit = st.sidebar.number_input(
     help="Only show videos from channels with fewer subscribers than this."
 )
 
-# 3. Minimum Views
 min_views_limit = st.sidebar.number_input(
     "Minimum Views (Filter):",
     min_value=0,
@@ -45,7 +41,6 @@ min_views_limit = st.sidebar.number_input(
 st.sidebar.markdown("---")
 st.sidebar.subheader("Video Duration Settings")
 
-# 4. Custom Shorts Threshold (Default: 120 seconds)
 shorts_threshold = st.sidebar.number_input(
     "Define Shorts Length (seconds):",
     min_value=10,
@@ -55,14 +50,12 @@ shorts_threshold = st.sidebar.number_input(
     help="Videos shorter than or equal to this will be considered 'Shorts'."
 )
 
-# 5. Video Type Filter (Default: Long Form)
 video_type = st.sidebar.radio(
     "Filter by Type:",
     ("All", "Long Form", "Shorts"),
-    index=1  # Sets 'Long Form' as default
+    index=1 
 )
 
-# 6. Keywords Input
 st.sidebar.markdown("---")
 st.subheader("Enter Keywords")
 st.markdown("Enter your topics below. Separate by Comma (`,`) or New Line.")
@@ -75,13 +68,11 @@ keyword_input = st.text_area(
 # --- HELPER FUNCTIONS ---
 
 def get_keywords_list(raw_input):
-    if not raw_input:
-        return []
+    if not raw_input: return []
     items = raw_input.replace("\n", ",").split(",")
     return [item.strip() for item in items if item.strip()]
 
 def parse_duration(duration_str):
-    """Parses YouTube duration (PT1M30S) into seconds."""
     if not duration_str: return 0
     match = re.match(r'PT(\d+H)?(\d+M)?(\d+S)?', duration_str)
     if not match: return 0
@@ -91,18 +82,13 @@ def parse_duration(duration_str):
     return (hours * 3600) + (minutes * 60) + seconds
 
 def format_seconds_to_time(seconds):
-    """Converts seconds to H:MM:SS or MM:SS format"""
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
-    if h > 0:
-        return f"{h}:{m:02d}:{s:02d}" 
-    else:
-        return f"{m}:{s:02d}"
+    if h > 0: return f"{h}:{m:02d}:{s:02d}" 
+    else: return f"{m}:{s:02d}"
 
 def calculate_time_ago(iso_date_str):
-    """Calculates relative time."""
     if not iso_date_str: return "Unknown"
-    
     published_date = None
     try:
         published_date = datetime.strptime(iso_date_str, "%Y-%m-%dT%H:%M:%SZ")
@@ -116,12 +102,9 @@ def calculate_time_ago(iso_date_str):
     diff = now - published_date
     days = diff.days
 
-    if days >= 365:
-        return f"{days // 365} year(s) ago"
-    elif days >= 30:
-        return f"{days // 30} month(s) ago"
-    elif days > 0:
-        return f"{days} day(s) ago"
+    if days >= 365: return f"{days // 365} year(s) ago"
+    elif days >= 30: return f"{days // 30} month(s) ago"
+    elif days > 0: return f"{days} day(s) ago"
     else:
         hours = diff.seconds // 3600
         return f"{hours} hour(s) ago" if hours > 0 else "Just now"
@@ -139,6 +122,7 @@ if st.button("Find Viral Videos"):
             YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
             YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
             YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
+            YOUTUBE_PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItems"
             
             start_date = (datetime.utcnow() - timedelta(days=int(days))).isoformat("T") + "Z"
             
@@ -179,8 +163,8 @@ if st.button("Find Viral Videos"):
                 stats_data = stats_response.json()
                 video_details_map = {item['id']: item for item in stats_data.get('items', [])}
 
-                # 3. Channel Stats
-                channel_params = {"part": "statistics,snippet", "id": ",".join(channel_ids), "key": API_KEY}
+                # 3. Channel Stats (Added contentDetails to get Uploads playlist)
+                channel_params = {"part": "statistics,snippet,contentDetails", "id": ",".join(channel_ids), "key": API_KEY}
                 channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
                 channel_data = channel_response.json()
                 channel_map = {item['id']: item for item in channel_data.get('items', [])}
@@ -207,19 +191,51 @@ if st.button("Find Viral Videos"):
                     ch_data = channel_map.get(ch_id, {})
                     subs = int(ch_data.get('statistics', {}).get('subscriberCount', 0))
                     total_videos = int(ch_data.get('statistics', {}).get('videoCount', 0))
+                    
                     channel_publish_date = ch_data.get('snippet', {}).get('publishedAt')
-                    channel_age = calculate_time_ago(channel_publish_date)
+                    creation_age = calculate_time_ago(channel_publish_date)
                     
-                    # Create Channel URL
-                    channel_url = f"https://www.youtube.com/channel/{ch_id}"
-                    
-                    # FILTERS
+                    # FILTERS (Apply before extra API calls to save quota)
                     if subs >= max_subs_limit or subs == 0: continue
                     if views < min_views_limit: continue
                     
                     is_short = duration_sec <= shorts_threshold
                     if video_type == "Shorts" and not is_short: continue
                     if video_type == "Long Form" and is_short: continue
+
+                    # --- LOGIC FOR FIRST VIDEO AGE ---
+                    # Default to creation age
+                    first_video_label = "Channel Creation"
+                    first_video_age = creation_age
+                    
+                    # If channel has few videos, we can fetch the actual first upload date
+                    if 0 < total_videos <= 50:
+                        try:
+                            uploads_playlist_id = ch_data.get('contentDetails', {}).get('relatedPlaylists', {}).get('uploads')
+                            if uploads_playlist_id:
+                                # Fetch playlist items (Newest to Oldest)
+                                pl_params = {
+                                    "part": "snippet",
+                                    "playlistId": uploads_playlist_id,
+                                    "maxResults": 50, # Max allowed, enough to cover all videos if total <= 50
+                                    "key": API_KEY
+                                }
+                                pl_response = requests.get(YOUTUBE_PLAYLIST_ITEMS_URL, params=pl_params)
+                                pl_data = pl_response.json()
+                                
+                                if "items" in pl_data and pl_data["items"]:
+                                    # The last item in the list is the oldest video
+                                    oldest_video = pl_data["items"][-1]
+                                    oldest_date = oldest_video['snippet']['publishedAt']
+                                    first_video_age = calculate_time_ago(oldest_date)
+                                    first_video_label = "First Upload"
+                        except Exception:
+                            pass # Fallback to creation date if API fails
+                    elif total_videos > 50:
+                         first_video_label = "Channel Creation (>50 vids)"
+
+                    
+                    channel_url = f"https://www.youtube.com/channel/{ch_id}"
                     
                     keyword_results.append({
                         "title": video["snippet"]["title"],
@@ -233,7 +249,8 @@ if st.button("Find Viral Videos"):
                         "total_videos": total_videos,
                         "duration_str": formatted_duration,
                         "video_age": video_age,
-                        "channel_age": channel_age # Channel Creation Date (approx first video)
+                        "first_video_label": first_video_label,
+                        "first_video_age": first_video_age
                     })
 
                 if keyword_results:
@@ -257,9 +274,10 @@ if st.button("Find Viral Videos"):
                                     f"⏳ **Duration:** `{res['duration_str']}`"
                                 )
                                 
+                                # UPDATED LINE: Uses Real First Upload Age if possible
                                 st.markdown(
                                     f"📅 **Video Age:** {res['video_age']} | "
-                                    f"🎂 **Channel Started:** {res['channel_age']}"
+                                    f"👶 **{res['first_video_label']}:** {res['first_video_age']}"
                                 )
                                 st.caption(res['desc'])
                             st.divider()
